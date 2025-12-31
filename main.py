@@ -1,129 +1,114 @@
-import logging
-import asyncio
 import os
 import json
-import re
-import psycopg2
-import google.generativeai as genai
-import requests
-from datetime import datetime
-from fastapi import FastAPI
+import logging
+import asyncio
+import requests # Bizga faqat shu kerak, bu hamma joyda bor
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-import uvicorn
+from dotenv import load_dotenv
 
-# --- SOZLAMALAR ---
+# Loglarni sozlash
 logging.basicConfig(level=logging.INFO)
-TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID") # Kanal ID string bo'lib kelishi mumkin
-DATABASE_URL = os.getenv("DATABASE_URL")
+
+# O'zgaruvchilarni olish
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
-# --- AI SOZLAMALARI ---
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    
-app = FastAPI()
-bot = Bot(token=TOKEN)
+# Botni yaratish
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- BAZA FUNKSIYALARI ---
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
-
-def init_db():
-    try:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute('''
-                    CREATE TABLE IF NOT EXISTS post_history (
-                        id SERIAL PRIMARY KEY, 
-                        topic TEXT,
-                        source_url TEXT,
-                        posted_at TIMESTAMP DEFAULT NOW()
-                    )
-                ''')
-                conn.commit()
-        logging.info("✅ Baza jadvallari tayyor!")
-    except Exception as e:
-        logging.error(f"❌ Baza xatosi: {e}")
-
-init_db()
-
-# --- ASOSIY FUNKSIYALAR ---
-async def get_ai_content():
-    if not model: return None
-    prompt = """
-    Menga fan, tarix, tabiat yoki texnologiya haqida juda qiziqarli fakt top.
-    
-    Talablar:
-    1. Faktni o'zbek tilida qiziqarli va qisqa (3 gap) tushuntir.
-    2. Faktni tasdiqlovchi manba (URL) top.
-    3. Rasm uchun inglizcha qidiruv so'zini (search query) yoz.
-    
-    Javob formati (JSON):
-    {"title": "Sarlavha", "explanation": "Matn...", "source_url": "url...", "image_query": "english words"}
-    """
-    try:
-        response = model.generate_content(prompt)
-        return json.loads(response.text)
-    except Exception as e:
-        logging.error(f"AI Xatosi: {e}")
-        return None
-
-async def get_unsplash_image(query):
+# --- 1. RASM QISMI (Unsplash) ---
+async def get_image(query):
     if not UNSPLASH_ACCESS_KEY: return None
     url = f"https://api.unsplash.com/photos/random?query={query}&orientation=landscape&client_id={UNSPLASH_ACCESS_KEY}"
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url)
         if response.status_code == 200:
             return response.json()['urls']['regular']
-    except: return None
+    except Exception as e:
+        logging.error(f"Rasm xatosi: {e}")
+    return None
 
-# --- SERVER YO'LLARI ---
+# --- 2. AI QISMI (Kutubxonasiz, to'g'ridan-to'g'ri ulanish) ---
+async def get_ai_content():
+    if not GOOGLE_API_KEY: return None
+    
+    # MANA SHU YER "BETON" YECHIM 👇
+    # Hech qanday kutubxona kerak emas, to'g'ridan-to'g'ri Googlega ulanamiz
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    headers = {'Content-Type': 'application/json'}
+    
+    prompt = "Menga fan, tarix yoki tabiat haqida qiziqarli va noyob fakt ayt. Javob faqat JSON formatda bo'lsin: {\"title\": \"Mavzu\", \"explanation\": \"Qisqa malumot (o'zbekcha)\", \"source_url\": \"google.com\", \"image_query\": \"English keyword for image\"}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        # Agar xato bo'lsa logga chiqaramiz
+        if response.status_code != 200:
+            logging.error(f"AI Xatosi: {response.text}")
+            return None
+            
+        data = response.json()
+        # Javobni tozalash
+        text = data['candidates'][0]['content']['parts'][0]['text']
+        text = text.replace("```json", "").replace("```", "").strip()
+        return json.loads(text)
+    except Exception as e:
+        logging.error(f"Ulanish xatosi: {e}")
+        return None
+
+# --- 3. POST TAYYORLASH VA YUBORISH ---
+async def create_post():
+    logging.info("⏳ Post tayyorlanmoqda...")
+    
+    # 1. AIdan malumot olamiz
+    ai_data = await get_ai_content()
+    if not ai_data:
+        logging.error("❌ AI ishlamadi")
+        return False
+
+    # 2. Rasm olamiz
+    image_url = await get_image(ai_data.get("image_query", "nature"))
+    
+    # 3. Post matnini yasaymiz
+    caption = f"✨ **{ai_data['title']}**\n\n{ai_data['explanation']}\n\n🔗 [Manba]({ai_data['source_url']}) | 🤖 AI Post"
+
+    # 4. Kanalga yuboramiz
+    try:
+        if image_url:
+            await bot.send_photo(chat_id=CHANNEL_ID, photo=image_url, caption=caption, parse_mode="Markdown")
+        else:
+            await bot.send_message(chat_id=CHANNEL_ID, text=caption, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logging.error(f"Telegram xatosi: {e}")
+        return False
+
+# --- WEBHOOK (Trigger) ---
+from fastapi import FastAPI
+import uvicorn
+
+app = FastAPI()
+
 @app.get("/")
-async def root(): return {"status": "🤖 Bot ishlamoqda!"}
+async def root():
+    return {"message": "Bot ishlayapti!"}
 
 @app.get("/trigger-post")
 async def trigger_post():
-    logging.info("⏳ Post tayyorlanmoqda...")
-    ai_data = await get_ai_content()
-    if not ai_data: return {"status": "AI xatosi"}
-    
-    image_url = await get_unsplash_image(ai_data['image_query'])
-    caption = (f"✨ <b>{ai_data['title']}</b>\n\n{ai_data['explanation']}\n\n"
-               f"🔗 <a href='{ai_data['source_url']}'>Manba</a> | 🤖 AI Post")
-    
-    try:
-        chat_id = int(CHANNEL_ID) if CHANNEL_ID else None
-        if not chat_id: return {"status": "Kanal ID yo'q"}
+    result = await create_post()
+    if result:
+        return {"status": "success", "message": "Post chiqdi!"}
+    return {"status": "error", "message": "Xatolik bo'ldi"}
 
-        if image_url:
-            await bot.send_photo(chat_id=chat_id, photo=image_url, caption=caption, parse_mode="HTML")
-        else:
-            await bot.send_message(chat_id=chat_id, text=caption, parse_mode="HTML", disable_web_page_preview=True)
-            
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO post_history (topic, source_url) VALUES (%s, %s)", (ai_data['title'], ai_data['source_url']))
-                conn.commit()
-        return {"status": "success"}
-    except Exception as e:
-        return {"status": f"Xato: {e}"}
-
-# --- ISHGA TUSHIRISH ---
-@dp.message(Command("start"))
-async def start(msg: types.Message):
-    await msg.answer("Bot ishlamoqda!")
-
-async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-    server = uvicorn.Server(config)
-    await asyncio.gather(dp.start_polling(bot), server.serve())
-
+# Ishga tushirish
 if __name__ == "__main__":
-    asyncio.run(main())
-  
+    uvicorn.run(app, host="0.0.0.0", port=10000)
+        
