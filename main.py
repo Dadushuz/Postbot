@@ -23,9 +23,8 @@ UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 # --- AI SOZLAMALARI ---
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
-
-
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
 app = FastAPI()
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
