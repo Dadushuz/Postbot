@@ -39,7 +39,7 @@ async def get_ai_content():
     
     # MANA SHU YER "BETON" YECHIM 👇
     # Hech qanday kutubxona kerak emas, to'g'ridan-to'g'ri Googlega ulanamiz
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GOOGLE_API_KEY}"
     headers = {'Content-Type': 'application/json'}
     
     prompt = "Menga fan, tarix yoki tabiat haqida qiziqarli va noyob fakt ayt. Javob faqat JSON formatda bo'lsin: {\"title\": \"Mavzu\", \"explanation\": \"Qisqa malumot (o'zbekcha)\", \"source_url\": \"google.com\", \"image_query\": \"English keyword for image\"}"
