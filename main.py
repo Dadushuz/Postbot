@@ -1,12 +1,13 @@
 import os
 import json
 import logging
+import random
 import httpx
 from dotenv import load_dotenv
 from aiogram import Bot
 from fastapi import FastAPI
 
-# ================== SOZLAMALAR ==================
+# ================== BASIC SETUP ==================
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
@@ -17,6 +18,18 @@ UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
 bot = Bot(token=BOT_TOKEN)
 app = FastAPI()
+
+# ================== CONTENT CONFIG ==================
+TOPICS = [
+    "ancient history mystery",
+    "space and universe",
+    "human psychology",
+    "weird science facts",
+    "nature secrets",
+    "lost civilizations",
+]
+
+CTA_TEXT = "\n\n💬 Izohda fikringni yoz!"
 
 # ================== UNSPLASH ==================
 async def get_image(query: str):
@@ -40,40 +53,45 @@ async def get_image(query: str):
 
     return None
 
-# ================== GEMINI AI (100% ISHLAYDIGAN) ==================
+# ================== GEMINI AI (REST · STABLE) ==================
 async def get_ai_content():
     if not GOOGLE_API_KEY:
         return None
 
-    # ❗ MUHIM: REST API uchun ENG ISHONCHLI MODEL
+    topic = random.choice(TOPICS)
+
     url = (
         "https://generativelanguage.googleapis.com/"
         f"v1/models/gemini-1.5-pro:generateContent?key={GOOGLE_API_KEY}"
     )
 
     prompt = (
-        "Fan, tarix yoki tabiat haqida qiziqarli va noyob fakt ayt.\n"
+        "Sen ilmiy-ommabop Telegram kanallar uchun kontent yozuvchi mutaxassissan.\n"
+        "O‘zbekiston auditoriyasi uchun juda qiziqarli va kam tanilgan fakt yoz.\n\n"
+        f"Mavzu yo‘nalishi: {topic}\n\n"
+        "Talablar:\n"
+        "- Sarlavha diqqat tortuvchi bo‘lsin\n"
+        "- Matn 3–5 gapdan iborat bo‘lsin\n"
+        "- Oddiy va jonli o‘zbek tilida yoz\n"
+        "- Oxirida o‘ylantiruvchi savol bo‘lsin\n"
+        "- Clickbait bo‘lmasin\n\n"
         "Faqat JSON formatda javob ber:\n"
         "{"
-        "\"title\": \"Mavzu\", "
-        "\"explanation\": \"Qisqa tushuntirish (o‘zbekcha)\", "
-        "\"source_url\": \"https://google.com\", "
-        "\"image_query\": \"english keyword\""
+        "\"title\": \"Qiziqarli sarlavha\", "
+        "\"explanation\": \"Asosiy matn + savol\", "
+        "\"source_url\": \"https://en.wikipedia.org\", "
+        "\"image_query\": \"strong visual english keyword\""
         "}"
     )
 
     payload = {
         "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
+            {"parts": [{"text": prompt}]}
         ]
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=25) as client:
             r = await client.post(url, json=payload)
 
             if r.status_code != 200:
@@ -89,7 +107,7 @@ async def get_ai_content():
         logging.error(f"❌ AI parsing xato: {e}")
         return None
 
-# ================== POST YARATISH ==================
+# ================== POST CREATOR ==================
 async def create_post():
     logging.info("⏳ Post tayyorlanmoqda...")
 
@@ -102,8 +120,9 @@ async def create_post():
 
     caption = (
         f"✨ <b>{ai_data['title']}</b>\n\n"
-        f"{ai_data['explanation']}\n\n"
-        f"🔗 <a href='{ai_data['source_url']}'>Manba</a> | 🤖 AI Post"
+        f"{ai_data['explanation']}"
+        f"{CTA_TEXT}\n\n"
+        f"🔗 <a href='{ai_data['source_url']}'>Manba</a> | 🤖 AI"
     )
 
     try:
@@ -126,7 +145,7 @@ async def create_post():
         logging.error(f"❌ Telegram xato: {e}")
         return False
 
-# ================== WEB ==================
+# ================== FASTAPI ==================
 @app.get("/")
 async def root():
     return {"status": "Bot ishlayapti ✅"}
