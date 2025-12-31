@@ -30,22 +30,26 @@ async def get_image(query: str):
         "client_id": UNSPLASH_ACCESS_KEY,
     }
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(url, params=params)
             if r.status_code == 200:
                 return r.json()["urls"]["regular"]
-        except Exception as e:
-            logging.error(f"❌ Unsplash xato: {e}")
+    except Exception as e:
+        logging.error(f"❌ Unsplash xato: {e}")
 
     return None
 
-# ================== GEMINI AI ==================
+# ================== GEMINI AI (100% ISHLAYDIGAN) ==================
 async def get_ai_content():
     if not GOOGLE_API_KEY:
         return None
 
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={GOOGLE_API_KEY}"
+    # ❗ MUHIM: REST API uchun ENG ISHONCHLI MODEL
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        f"v1/models/gemini-1.5-pro:generateContent?key={GOOGLE_API_KEY}"
+    )
 
     prompt = (
         "Fan, tarix yoki tabiat haqida qiziqarli va noyob fakt ayt.\n"
@@ -60,13 +64,18 @@ async def get_ai_content():
 
     payload = {
         "contents": [
-            {"parts": [{"text": prompt}]}
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
         ]
     }
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(url, json=payload)
+
             if r.status_code != 200:
                 logging.error(f"❌ Gemini xato: {r.text}")
                 return None
@@ -76,9 +85,9 @@ async def get_ai_content():
 
             return json.loads(text)
 
-        except Exception as e:
-            logging.error(f"❌ AI parsing xato: {e}")
-            return None
+    except Exception as e:
+        logging.error(f"❌ AI parsing xato: {e}")
+        return None
 
 # ================== POST YARATISH ==================
 async def create_post():
