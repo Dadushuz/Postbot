@@ -35,27 +35,32 @@ async def get_image(query):
             logging.error(f"Rasm xatosi: {e}")
     return None
 
-# --- 2. YANGI AI (Groq - Llama 3) ---
+# --- 2. IDEAL AI (Groq - Llama 3.3 70B) ---
 async def get_ai_content():
     if not GROQ_API_KEY:
-        logging.error("❌ Groq kaliti yo'q!")
         return None
 
     client = Groq(api_key=GROQ_API_KEY)
     
+    # AIga mukammal o'zbek tili va jozibadorlik haqida buyruq beramiz
     prompt = (
-        "Sen Telegram kanal uchun qiziqarli faktlar yozadigan botsan. "
-        "Menga fan, tarix, tabiat yoki texnologiya haqida bitta juda qiziqarli va noyob fakt ayt. "
+        "Sen professionall yozuvchi va ilmiy-ommabop kanal adminisan. "
+        "Menga fan, koinot, tarix yoki tabiat haqida HAYRATLANARLI fakt ayt. "
+        "Qoidalaring:\n"
+        "1. Til: Sof o'zbek tilida, imlo xatolarisiz yoz (o', g', sh, ch harflariga diqqat qil).\n"
+        "2. Uslub: Ma'lumot quruq bo'lmasin, o'quvchini hayratga solsin.\n"
+        "3. Struktura: Diqqat tortuvchi sarlavha, asosiy qism va oxirida o'ylantiruvchi qisqa savol.\n\n"
         "Javobni faqat JSON formatda qaytar: "
-        "{\"title\": \"Sarlavha (O'zbekcha)\", \"explanation\": \"Qiziqarli fakt matni (3-4 gap, O'zbekcha)\", \"source\": \"Manba nomi\", \"image_query\": \"Inglizcha kalit so'z\"}"
+        "{\"title\": \"Sarlavha (EMOJI bilan)\", \"explanation\": \"Batafsil matn (jozibador)\", \"source\": \"Manba nomi\", \"image_query\": \"Inglizcha rasm uchun kalit so'z\"}"
     )
 
     try:
-        logging.info("🧠 Groq (Llama 3) o'ylamoqda...")
+        logging.info("🧠 Llama 3.3 ideal matn tayyorlamoqda...")
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",  # <-- Juda tez va bepul model
-            response_format={"type": "json_object"} # <-- JSON berishini kafolatlaymiz
+            model="llama-3.3-70b-versatile",
+            temperature=0.7, # Bir oz ijodiylik qo'shamiz
+            response_format={"type": "json_object"}
         )
         
         content = chat_completion.choices[0].message.content
@@ -65,26 +70,33 @@ async def get_ai_content():
         logging.error(f"❌ Groq xatosi: {e}")
         return None
 
-# --- 3. POST TAYYORLASH ---
+# --- 3. POST TAYYORLASH (Chiroyli dizayn) ---
 async def create_post():
     data = await get_ai_content()
     
     if not data:
-        return "❌ AI ishlamadi. Loglarni qarang."
+        return "❌ AI ishlamadi."
     
-    img = await get_image(data.get("image_query", "nature"))
-    caption = f"⚡️ <b>{data['title']}</b>\n\n{data['explanation']}\n\nManba: {data['source']} | 🤖 Bot"
+    img = await get_image(data.get("image_query", "science technology"))
+    
+    # Telegram uchun chiroyli dizayn (HTML)
+    caption = (
+        f"🌟 <b>{data['title']}</b>\n\n"
+        f"{data['explanation']}\n\n"
+        f"📖 <b>Manba:</b> <i>{data['source']}</i>\n\n"
+        f"➖➖➖➖➖➖➖➖\n"
+        f"💡 @SeningKanaling — Har kuni yangi bilimlar!" # Kanalingiz linkini yozing
+    )
 
     try:
         if img:
             await bot.send_photo(CHANNEL_ID, photo=img, caption=caption, parse_mode="HTML")
         else:
             await bot.send_message(CHANNEL_ID, text=caption, parse_mode="HTML")
-        return "✅ Post chiqdi! (Groq orqali)"
+        return "✅ Ideal post chiqdi!"
     except Exception as e:
-        logging.error(f"Telegram xatosi: {e}")
         return f"Telegram xatosi: {e}"
-
+        
 # --- SERVER ---
 @app.get("/")
 def root(): return {"status": "Groq Bot Active 🚀"}
