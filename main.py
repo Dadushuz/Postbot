@@ -54,7 +54,7 @@ async def get_ai_content():
         logging.info("🧠 Groq (Llama 3) o'ylamoqda...")
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-8b-8192",  # <-- Juda tez va bepul model
+            model="llama-3.3-70b-versatile",  # <-- Juda tez va bepul model
             response_format={"type": "json_object"} # <-- JSON berishini kafolatlaymiz
         )
         
