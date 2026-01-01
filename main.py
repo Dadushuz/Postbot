@@ -1,164 +1,103 @@
-import os
 import json
 import logging
-import random
 import httpx
-from dotenv import load_dotenv
-from aiogram import Bot
+from aiogram import Bot, Dispatcher
 from fastapi import FastAPI
+import uvicorn
+import asyncio
 
-# ================== BASIC SETUP ==================
-logging.basicConfig(level=logging.INFO)
+# ======================================================
+# 🛑 DIQQAT: KALITINGIZNI SHU YERGA YOZING (Qo'shtirnoq ichiga)
+MENING_KALITIM = "AIzaSyAYf34HAgo7sYJUtWC1I9RuLbabdAWhfJM"  # <-- Mana shu yerga uzun kalitni joylang
+# ======================================================
+
+# Agar Bot Token Renderda bo'lsa, os.getenv ishlatamiz. 
+# Agar u ham ishlamasa, uni ham shu yerga yozish mumkin.
+import os
+from dotenv import load_dotenv
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN") 
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+# UNSPLASH KALITINI HAM AGAR ISHLAMASA SHU YERGA YOZING
+UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+
+# Loglarni yoqish
+logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 app = FastAPI()
 
-# ================== CONTENT CONFIG ==================
-TOPICS = [
-    "ancient history mystery",
-    "space and universe",
-    "human psychology",
-    "weird science facts",
-    "nature secrets",
-    "lost civilizations",
-]
+# 1. Google Modelini tekshirish va olish
+async def get_ai_content():
+    # Biz 2 xil URLni sinab ko'ramiz (biri o'xshamasa, ikkinchisi)
+    urls = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={MENING_KALITIM}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={MENING_KALITIM}"
+    ]
 
-CTA_TEXT = "\n\n💬 Izohda fikringni yoz!"
-
-# ================== UNSPLASH ==================
-async def get_image(query: str):
-    if not UNSPLASH_ACCESS_KEY:
-        return None
-
-    url = "https://api.unsplash.com/photos/random"
-    params = {
-        "query": query,
-        "orientation": "landscape",
-        "client_id": UNSPLASH_ACCESS_KEY,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(url, params=params)
-            if r.status_code == 200:
-                return r.json()["urls"]["regular"]
-    except Exception as e:
-        logging.error(f"❌ Unsplash xato: {e}")
-
+    prompt = "Menga fan haqida 1 ta qiziqarli fakt ayt. Javob JSON formatda bo'lsin: {\"title\": \"Mavzu\", \"explanation\": \"Fakt\", \"source_url\": \"google.com\", \"image_query\": \"nature\"}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    async with httpx.AsyncClient(timeout=30) as client:
+        for url in urls:
+            try:
+                logging.info(f"🔄 Urinib ko'rilmoqda: {url.split('models/')[1].split(':')[0]}...")
+                response = await client.post(url, json=payload)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data['candidates'][0]['content']['parts'][0]['text']
+                    # JSON tozalash
+                    text = text.replace("```json", "").replace("```", "").strip()
+                    logging.info("✅ Google ishladi!")
+                    return json.loads(text)
+                else:
+                    logging.error(f"❌ Xatolik ({response.status_code}): {response.text}")
+            except Exception as e:
+                logging.error(f"Ulanish xatosi: {e}")
+                
     return None
 
-# ================== GEMINI AI (REST · STABLE) ==================
-async def get_ai_content():
-    if not GOOGLE_API_KEY:
-        return None
+# 2. Rasm olish
+async def get_image(query):
+    if not UNSPLASH_KEY: return None
+    url = f"https://api.unsplash.com/photos/random?query={query}&client_id={UNSPLASH_KEY}&orientation=landscape"
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return resp.json()['urls']['regular']
+        except:
+            pass
+    return None
 
-    topic = random.choice(TOPICS)
-
-    # Agar 1.5-pro ishlamasa, keyinchalik "gemini-pro" ga o'zgartirish mumkin
-    url = (
-    "https://generativelanguage.googleapis.com/"
-    f"v1/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
-     )
-
-    prompt = (
-        "Sen ilmiy-ommabop Telegram kanallar uchun kontent yozuvchi mutaxassissan.\n"
-        "O‘zbekiston auditoriyasi uchun juda qiziqarli va kam tanilgan fakt yoz.\n\n"
-        f"Mavzu yo‘nalishi: {topic}\n\n"
-        "Talablar:\n"
-        "- Sarlavha diqqat tortuvchi bo‘lsin\n"
-        "- Matn 3–5 gapdan iborat bo‘lsin\n"
-        "- Oddiy va jonli o‘zbek tilida yoz\n"
-        "- Oxirida o‘ylantiruvchi savol bo‘lsin\n"
-        "- Clickbait bo‘lmasin\n\n"
-        "Faqat JSON formatda javob ber:\n"
-        "{"
-        "\"title\": \"Qiziqarli sarlavha\", "
-        "\"explanation\": \"Asosiy matn + savol\", "
-        "\"source_url\": \"https://en.wikipedia.org\", "
-        "\"image_query\": \"strong visual english keyword\""
-        "}"
-    )
-
-    payload = {
-        "contents": [
-            {"parts": [{"text": prompt}]}
-        ]
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=25) as client:
-            r = await client.post(url, json=payload)
-
-            if r.status_code != 200:
-                logging.error(f"❌ Gemini xato: {r.text}")
-                return None
-
-            text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-            text = text.replace("```json", "").replace("```", "").strip()
-
-            return json.loads(text)
-
-    except Exception as e:
-        logging.error(f"❌ AI parsing xato: {e}")
-        return None
-
-# ================== POST CREATOR ==================
+# 3. Post yaratish
 async def create_post():
-    logging.info("⏳ Post tayyorlanmoqda...")
-
-    ai_data = await get_ai_content()
-    if not ai_data:
-        logging.error("❌ AI ishlamadi")
-        return False
-
-    image_url = await get_image(ai_data.get("image_query", "nature"))
-
-    caption = (
-        f"✨ <b>{ai_data['title']}</b>\n\n"
-        f"{ai_data['explanation']}"
-        f"{CTA_TEXT}\n\n"
-        f"🔗 <a href='{ai_data['source_url']}'>Manba</a> | 🤖 AI"
-    )
-
+    data = await get_ai_content()
+    if not data:
+        return "❌ AI ishlamadi. Loglarni tekshiring."
+    
+    img = await get_image(data.get("image_query", "technology"))
+    caption = f"✨ <b>{data['title']}</b>\n\n{data['explanation']}\n\n🔗 Manba: {data['source_url']}"
+    
     try:
-        if image_url:
-            await bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=image_url,
-                caption=caption,
-                parse_mode="HTML"
-            )
+        if img:
+            await bot.send_photo(CHANNEL_ID, photo=img, caption=caption, parse_mode="HTML")
         else:
-            await bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=caption,
-                parse_mode="HTML"
-            )
-        return True
-
+            await bot.send_message(CHANNEL_ID, text=caption, parse_mode="HTML")
+        return "✅ Post chiqdi!"
     except Exception as e:
-        logging.error(f"❌ Telegram xato: {e}")
-        return False
+        return f"❌ Telegram xatosi: {e}"
 
-# ================== FASTAPI ==================
+# Server
 @app.get("/")
-async def root():
-    return {"status": "Bot ishlayapti ✅"}
+def read_root(): return {"status": "Active"}
 
 @app.get("/trigger-post")
-async def trigger_post():
-    ok = await create_post()
-    if ok:
-        return {"success": True, "message": "Post chiqdi!"}
-    return {"success": False, "message": "Xatolik"}
+async def trigger():
+    res = await create_post()
+    return {"result": res}
 
-# ================== RUN ==================
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=10000)
