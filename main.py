@@ -1,98 +1,93 @@
+import os
 import json
 import logging
 import httpx
 from aiogram import Bot, Dispatcher
 from fastapi import FastAPI
 import uvicorn
-import asyncio
-
-# ======================================================
-# 🛑 DIQQAT: KALITINGIZNI SHU YERGA YOZING (Qo'shtirnoq ichiga)
-MENING_KALITIM = "AIzaSyAYf34HAgo7sYJUtWC1I9RuLbabdAWhfJM"  # <-- Mana shu yerga uzun kalitni joylang
-# ======================================================
-
-# Agar Bot Token Renderda bo'lsa, os.getenv ishlatamiz. 
-# Agar u ham ishlamasa, uni ham shu yerga yozish mumkin.
-import os
+from groq import Groq  # <-- Yangi AI
 from dotenv import load_dotenv
+
+# Sozlamalar
+logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN") 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-# UNSPLASH KALITINI HAM AGAR ISHLAMASA SHU YERGA YOZING
-UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
-
-# Loglarni yoqish
-logging.basicConfig(level=logging.INFO)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") # <-- Yangi kalit
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
 bot = Bot(token=BOT_TOKEN)
 app = FastAPI()
 
-# 1. Google Modelini tekshirish va olish
-async def get_ai_content():
-    # Biz 2 xil URLni sinab ko'ramiz (biri o'xshamasa, ikkinchisi)
-    urls = [
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={MENING_KALITIM}",
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={MENING_KALITIM}"
-    ]
-
-    prompt = "Menga fan haqida 1 ta qiziqarli fakt ayt. Javob JSON formatda bo'lsin: {\"title\": \"Mavzu\", \"explanation\": \"Fakt\", \"source_url\": \"google.com\", \"image_query\": \"nature\"}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    async with httpx.AsyncClient(timeout=30) as client:
-        for url in urls:
-            try:
-                logging.info(f"🔄 Urinib ko'rilmoqda: {url.split('models/')[1].split(':')[0]}...")
-                response = await client.post(url, json=payload)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    text = data['candidates'][0]['content']['parts'][0]['text']
-                    # JSON tozalash
-                    text = text.replace("```json", "").replace("```", "").strip()
-                    logging.info("✅ Google ishladi!")
-                    return json.loads(text)
-                else:
-                    logging.error(f"❌ Xatolik ({response.status_code}): {response.text}")
-            except Exception as e:
-                logging.error(f"Ulanish xatosi: {e}")
-                
-    return None
-
-# 2. Rasm olish
+# --- 1. RASM OLISH (O'zgarmadi) ---
 async def get_image(query):
-    if not UNSPLASH_KEY: return None
-    url = f"https://api.unsplash.com/photos/random?query={query}&client_id={UNSPLASH_KEY}&orientation=landscape"
-    async with httpx.AsyncClient() as client:
+    if not UNSPLASH_ACCESS_KEY: return None
+    url = "https://api.unsplash.com/photos/random"
+    params = {"query": query, "orientation": "landscape", "client_id": UNSPLASH_ACCESS_KEY}
+    
+    async with httpx.AsyncClient(timeout=10) as client:
         try:
-            resp = await client.get(url)
+            resp = await client.get(url, params=params)
             if resp.status_code == 200:
                 return resp.json()['urls']['regular']
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Rasm xatosi: {e}")
     return None
 
-# 3. Post yaratish
+# --- 2. YANGI AI (Groq - Llama 3) ---
+async def get_ai_content():
+    if not GROQ_API_KEY:
+        logging.error("❌ Groq kaliti yo'q!")
+        return None
+
+    client = Groq(api_key=GROQ_API_KEY)
+    
+    prompt = (
+        "Sen Telegram kanal uchun qiziqarli faktlar yozadigan botsan. "
+        "Menga fan, tarix, tabiat yoki texnologiya haqida bitta juda qiziqarli va noyob fakt ayt. "
+        "Javobni faqat JSON formatda qaytar: "
+        "{\"title\": \"Sarlavha (O'zbekcha)\", \"explanation\": \"Qiziqarli fakt matni (3-4 gap, O'zbekcha)\", \"source\": \"Manba nomi\", \"image_query\": \"Inglizcha kalit so'z\"}"
+    )
+
+    try:
+        logging.info("🧠 Groq (Llama 3) o'ylamoqda...")
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192",  # <-- Juda tez va bepul model
+            response_format={"type": "json_object"} # <-- JSON berishini kafolatlaymiz
+        )
+        
+        content = chat_completion.choices[0].message.content
+        return json.loads(content)
+        
+    except Exception as e:
+        logging.error(f"❌ Groq xatosi: {e}")
+        return None
+
+# --- 3. POST TAYYORLASH ---
 async def create_post():
     data = await get_ai_content()
+    
     if not data:
-        return "❌ AI ishlamadi. Loglarni tekshiring."
+        return "❌ AI ishlamadi. Loglarni qarang."
     
-    img = await get_image(data.get("image_query", "technology"))
-    caption = f"✨ <b>{data['title']}</b>\n\n{data['explanation']}\n\n🔗 Manba: {data['source_url']}"
-    
+    img = await get_image(data.get("image_query", "nature"))
+    caption = f"⚡️ <b>{data['title']}</b>\n\n{data['explanation']}\n\nManba: {data['source']} | 🤖 Bot"
+
     try:
         if img:
             await bot.send_photo(CHANNEL_ID, photo=img, caption=caption, parse_mode="HTML")
         else:
             await bot.send_message(CHANNEL_ID, text=caption, parse_mode="HTML")
-        return "✅ Post chiqdi!"
+        return "✅ Post chiqdi! (Groq orqali)"
     except Exception as e:
-        return f"❌ Telegram xatosi: {e}"
+        logging.error(f"Telegram xatosi: {e}")
+        return f"Telegram xatosi: {e}"
 
-# Server
+# --- SERVER ---
 @app.get("/")
-def read_root(): return {"status": "Active"}
+def root(): return {"status": "Groq Bot Active 🚀"}
 
 @app.get("/trigger-post")
 async def trigger():
