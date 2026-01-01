@@ -60,9 +60,10 @@ async def get_ai_content():
 
     topic = random.choice(TOPICS)
 
+    # Agar 1.5-pro ishlamasa, keyinchalik "gemini-pro" ga o'zgartirish mumkin
     url = (
         "https://generativelanguage.googleapis.com/"
-        f"v1/models/gemini-1.5-pro:generateContent?key={GOOGLE_API_KEY}"
+        f"v1beta/models/gemini-1.5-pro:generateContent?key={GOOGLE_API_KEY}"
     )
 
     prompt = (
@@ -153,7 +154,9 @@ async def root():
 @app.get("/trigger-post")
 async def trigger_post():
     ok = await create_post()
-    return {"success": ok}
+    if ok:
+        return {"success": True, "message": "Post chiqdi!"}
+    return {"success": False, "message": "Xatolik"}
 
 # ================== RUN ==================
 if __name__ == "__main__":
