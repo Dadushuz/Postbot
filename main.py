@@ -42,14 +42,13 @@ async def get_ai_content():
 
     client = Groq(api_key=GROQ_API_KEY)
     
-    # Promptni mukammallashtiramiz: Endi u aniq link va chiroyli o'zbekcha matn beradi
     prompt = (
         "Sen professional ilmiy-ommabop jurnalistsan. "
         "Menga koinot, tabiat, texnologiya yoki inson psixologiyasi haqida hayratlanarli fakt yoz.\n\n"
         "Talablar:\n"
         "1. Til: Sof o'zbek tilida, imlo xatolarisiz (o', g', sh, ch harflariga diqqat qil).\n"
         "2. Uslub: O'quvchini jalb qiluvchi, hayratga soluvchi ohangda bo'lsin.\n"
-        "3. Manba: Ma'lumot haqiqiy bo'lsin va unga tegishli ishonchli inglizcha manba linkini top.\n\n"
+        "3. Manba: Ma'lumot haqiqiy bo'lsin va unga tegishli ishonchli inglizcha manba linkini (URL) top.\n\n"
         "Faqat JSON formatda javob ber:\n"
         "{"
         "\"title\": \"Sarlavha (Emoji bilan)\", "
@@ -62,7 +61,8 @@ async def get_ai_content():
 
     try:
         logging.info("🧠 Llama 3.3 professional matn va manba qidirmoqda...")
-        chat_completion = client.chat.create(
+        # TO'G'IRLANGAN QATOR: .completions.create
+        chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
             temperature=0.6,
@@ -75,6 +75,7 @@ async def get_ai_content():
     except Exception as e:
         logging.error(f"❌ Groq xatosi: {e}")
         return None
+
 
 # --- 3. IDEAL POST DESIGN (Havola bilan) ---
 async def create_post():
