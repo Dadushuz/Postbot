@@ -3,6 +3,7 @@ import json
 import logging
 import httpx
 from aiogram import Bot
+from aiogram.types import URLInputFile
 from fastapi import FastAPI
 import uvicorn
 from groq import Groq
@@ -43,7 +44,6 @@ async def get_ai_content():
     )
 
     try:
-        # TO'G'RI METOD: .chat.completions.create
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
@@ -58,28 +58,45 @@ async def create_post():
     data = await get_ai_content()
     if not data: return False
     
-    img = await get_image(data.get("image_query", "nature"))
+    img_url = await get_image(data.get("image_query", "nature"))
+    
+    # Professional dizayn (HTML)
     caption = (
         f"🌟 <b>{data['title']}</b>\n\n"
         f"{data['explanation']}\n\n"
         f"🔗 <b>Manba:</b> <a href='{data['source_url']}'>{data['source_name']}</a>\n\n"
         f"➖➖➖➖➖➖➖➖\n"
-        f"💡 <b>@SeningKanaling</b> — Har kuni yangi bilimlar!"
+        f"💡 <b>@MAQSADIM</b> — Har kuni yangi bilimlar!"
     )
 
     try:
-        if img:
-            await bot.send_photo(CHANNEL_ID, photo=img, caption=caption, parse_mode="HTML")
+        if img_url:
+            # Xato tuzatildi: disable_web_page_preview olib tashlandi
+            await bot.send_photo(
+                chat_id=CHANNEL_ID, 
+                photo=img_url, 
+                caption=caption, 
+                parse_mode="HTML"
+            )
         else:
-            await bot.send_message(CHANNEL_ID, text=caption, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=CHANNEL_ID, 
+                text=caption, 
+                parse_mode="HTML"
+            )
         return True
-    except: return False
+    except Exception as e:
+        logging.error(f"❌ Telegram xatosi: {e}")
+        return False
 
 @app.get("/trigger-post")
 async def trigger():
     if await create_post():
-        return {"status": "success"}
-    return {"status": "error"}
+        return {"status": "success", "message": "Post chiqdi!"}
+    return {"status": "error", "message": "Xatolik bo'ldi"}
 
 @app.get("/")
 def home(): return {"status": "Bot is Live"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=10000)
