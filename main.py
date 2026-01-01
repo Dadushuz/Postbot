@@ -35,31 +35,37 @@ async def get_image(query):
             logging.error(f"Rasm xatosi: {e}")
     return None
 
-# --- 2. IDEAL AI (Groq - Llama 3.3 70B) ---
+# --- 2. PROFESSIONAL AI (Groq Llama 3.3 - 70B) ---
 async def get_ai_content():
     if not GROQ_API_KEY:
         return None
 
     client = Groq(api_key=GROQ_API_KEY)
     
-    # AIga mukammal o'zbek tili va jozibadorlik haqida buyruq beramiz
+    # Promptni mukammallashtiramiz: Endi u aniq link va chiroyli o'zbekcha matn beradi
     prompt = (
-        "Sen professionall yozuvchi va ilmiy-ommabop kanal adminisan. "
-        "Menga fan, koinot, tarix yoki tabiat haqida HAYRATLANARLI fakt ayt. "
-        "Qoidalaring:\n"
-        "1. Til: Sof o'zbek tilida, imlo xatolarisiz yoz (o', g', sh, ch harflariga diqqat qil).\n"
-        "2. Uslub: Ma'lumot quruq bo'lmasin, o'quvchini hayratga solsin.\n"
-        "3. Struktura: Diqqat tortuvchi sarlavha, asosiy qism va oxirida o'ylantiruvchi qisqa savol.\n\n"
-        "Javobni faqat JSON formatda qaytar: "
-        "{\"title\": \"Sarlavha (EMOJI bilan)\", \"explanation\": \"Batafsil matn (jozibador)\", \"source\": \"Manba nomi\", \"image_query\": \"Inglizcha rasm uchun kalit so'z\"}"
+        "Sen professional ilmiy-ommabop jurnalistsan. "
+        "Menga koinot, tabiat, texnologiya yoki inson psixologiyasi haqida hayratlanarli fakt yoz.\n\n"
+        "Talablar:\n"
+        "1. Til: Sof o'zbek tilida, imlo xatolarisiz (o', g', sh, ch harflariga diqqat qil).\n"
+        "2. Uslub: O'quvchini jalb qiluvchi, hayratga soluvchi ohangda bo'lsin.\n"
+        "3. Manba: Ma'lumot haqiqiy bo'lsin va unga tegishli ishonchli inglizcha manba linkini top.\n\n"
+        "Faqat JSON formatda javob ber:\n"
+        "{"
+        "\"title\": \"Sarlavha (Emoji bilan)\", "
+        "\"explanation\": \"Faktning batafsil va qiziqarli bayoni\", "
+        "\"source_name\": \"Manba nomi (masalan: NASA, BBC, Wikipedia)\", "
+        "\"source_url\": \"Haqiqiy manba linki (URL)\", "
+        "\"image_query\": \"Rasm qidirish uchun inglizcha kalit so'z\""
+        "}"
     )
 
     try:
-        logging.info("🧠 Llama 3.3 ideal matn tayyorlamoqda...")
-        chat_completion = client.chat.completions.create(
+        logging.info("🧠 Llama 3.3 professional matn va manba qidirmoqda...")
+        chat_completion = client.chat.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
-            temperature=0.7, # Bir oz ijodiylik qo'shamiz
+            temperature=0.6,
             response_format={"type": "json_object"}
         )
         
@@ -70,7 +76,7 @@ async def get_ai_content():
         logging.error(f"❌ Groq xatosi: {e}")
         return None
 
-# --- 3. POST TAYYORLASH (Chiroyli dizayn) ---
+# --- 3. IDEAL POST DESIGN (Havola bilan) ---
 async def create_post():
     data = await get_ai_content()
     
@@ -79,23 +85,36 @@ async def create_post():
     
     img = await get_image(data.get("image_query", "science technology"))
     
-    # Telegram uchun chiroyli dizayn (HTML)
+    # Post dizayni: Sarlavha, Matn va Pastda manba linki
     caption = (
         f"🌟 <b>{data['title']}</b>\n\n"
         f"{data['explanation']}\n\n"
-        f"📖 <b>Manba:</b> <i>{data['source']}</i>\n\n"
+        f"📖 <b>Manba:</b> <a href='{data['source_url']}'>{data['source_name']}</a>\n\n"
         f"➖➖➖➖➖➖➖➖\n"
-        f"💡 @SeningKanaling — Har kuni yangi bilimlar!" # Kanalingiz linkini yozing
+        f"💡 <b>@SeningKanaling</b> — Har kuni yangi bilimlar!" # BU YERGA KANALINGIZ LINKINI YOZING
     )
 
     try:
         if img:
-            await bot.send_photo(CHANNEL_ID, photo=img, caption=caption, parse_mode="HTML")
+            # send_photo ishlatamiz, rasm va tagida chiroyli matn bo'ladi
+            await bot.send_photo(
+                chat_id=CHANNEL_ID, 
+                photo=img, 
+                caption=caption, 
+                parse_mode="HTML",
+                disable_web_page_preview=False # Linkning kichik rasmi chiqishi uchun
+            )
         else:
-            await bot.send_message(CHANNEL_ID, text=caption, parse_mode="HTML")
-        return "✅ Ideal post chiqdi!"
+            await bot.send_message(
+                chat_id=CHANNEL_ID, 
+                text=caption, 
+                parse_mode="HTML",
+                disable_web_page_preview=False
+            )
+        return "✅ Professional post chiqdi!"
     except Exception as e:
-        return f"Telegram xatosi: {e}"
+        logging.error(f"Telegram xatosi: {e}")
+        return f"Xatolik: {e}"
         
 # --- SERVER ---
 @app.get("/")
