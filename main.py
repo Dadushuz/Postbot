@@ -63,7 +63,7 @@ async def get_ai_content():
     # Agar 1.5-pro ishlamasa, keyinchalik "gemini-pro" ga o'zgartirish mumkin
     url = (
     "https://generativelanguage.googleapis.com/"
-    f"v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    f"v1/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
      )
 
     prompt = (
